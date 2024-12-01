@@ -7,7 +7,7 @@
 #include "soc/soc.h" //disable brownout problems
 #include "soc/rtc_cntl_reg.h" //disable brownout problems
 #include "driver/gpio.h"
-
+#include <Servo.h> // For servo control
 
 // configuration for AI Thinker Camera board
 #define PWDN_GPIO_NUM     32
@@ -27,7 +27,9 @@
 #define HREF_GPIO_NUM     23
 #define PCLK_GPIO_NUM     22
 
-
+// Motor and servo pins
+#define MOTOR_PIN 12 // Pin for motor control
+#define SERVO_PIN 13 // Pin for servo control
 
 const char* ssid     = "network-name"; // CHANGE HERE
 const char* password = "network-password"; // CHANGE HERE
@@ -39,13 +41,31 @@ camera_fb_t * fb = NULL;
 size_t _jpg_buf_len = 0;
 uint8_t * _jpg_buf = NULL;
 uint8_t state = 0;
+Servo servo; // Servo object for controlling the servo
 
 using namespace websockets;
 WebsocketsClient client;
 
 void onMessageCallback(WebsocketsMessage message) {
+  String command = message.data();
   Serial.print("Got Message: ");
-  Serial.println(message.data());
+  Serial.println(command);
+
+  if (command.startsWith("MOTOR:")) {
+      // Control motor speed (0-255)
+      int speed = command.substring(6).toInt();
+      speed = constrain(speed, 0, 255);
+      analogWrite(MOTOR_PIN, speed);
+      Serial.printf("Motor speed set to %d\n", speed);
+  } else if (command.startsWith("SERVO:")) {
+      // Control servo angle (0-180)
+      int angle = command.substring(6).toInt();
+      angle = constrain(angle, 0, 180);
+      servo.write(angle);
+      Serial.printf("Servo angle set to %d\n", angle);
+  } else {
+      Serial.println("Unknown command");
+  }
 }
 
 esp_err_t init_camera() {
@@ -117,6 +137,19 @@ esp_err_t init_wifi() {
   return ESP_OK;
 };
 
+// Servo setup
+esp_err_t init_servo() {
+  servo.attach(SERVO_PIN);   // Attach servo
+  servo.write(90);           // Set servo to mid-position
+  return ESP_OK;
+};
+
+// Motor setup
+esp_err_t init_motor() {
+  pinMode(MOTOR_PIN, OUTPUT);
+  analogWrite(MOTOR_PIN, 0); // Start motor at 0 speed
+  return ESP_OK;
+};
 
 void setup() {
   WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
@@ -126,6 +159,8 @@ void setup() {
 
   init_camera();
   init_wifi();
+  init_servo();
+  init_motoro();
 }
 
 void loop() {
