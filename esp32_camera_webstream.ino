@@ -31,8 +31,15 @@
 #define PCLK_GPIO_NUM     22
 
 // Motor and servo pins
-#define MOTOR_PIN 12 // Pin for motor control
-#define SERVO_PIN 13 // Pin for servo control
+#define MOTOR_FORWARD_PIN 12 // Pin for motor control
+#define MOTOR_REVERSE_PIN 13 // Pin for motor control
+
+#define MOTOR_FORWARD_CHANNEL 3 // Chaneel for motor control
+#define MOTOR_REVERSE_CHANNEL 4 // Chaneel for motor control
+#define MOTOR_PWM_FREQUENCY 5000 // Chaneel for motor control
+#define MOTOR_PWM_RESOLUTION 8 // Chaneel for motor control
+
+#define SERVO_PIN 14 // Pin for servo control
 
 const char* ssid     = WIFI_SSID; // from secrets.h
 const char* password = WIFI_PASSWORD; // from secrets.h
@@ -43,13 +50,9 @@ camera_fb_t * fb = NULL;
 size_t _jpg_buf_len = 0;
 uint8_t * _jpg_buf = NULL;
 uint8_t state = 0;
-// Servo servo; // Servo object for controlling the servo
-// Motor and Servo setup
-const int dummyPin1 = 12;  // Motor control pin 1
-const int dummyPin2 = 13;  // Motor control pin 2
-const int servoPin = 14;   // Servo control pin
-const int motorPin1 = 12;
-const int motorPin2 = 13;
+
+const int dummyPin1 = 12;  // just need to use any pin to increment the servo channel
+const int dummyPin2 = 13;
 
 // Define dead zone threshold (adjust as needed)
 const int MOTOR_DEAD_ZONE = 10;  // Threshold for motor to ignore small values
@@ -120,16 +123,16 @@ void controlMotor(int throttle) {
     // Motor control using two pins for direction
     if (smoothedMotorSpeed > 0) {
         // Forward direction
-        analogWrite(motorPin1, smoothedMotorSpeed);
-        analogWrite(motorPin2, 0);
+        ledcWrite(MOTOR_FORWARD_PIN, smoothedMotorSpeed);
+        ledcWrite(MOTOR_REVERSE_PIN, 0);
     } else if (smoothedMotorSpeed < 0) {
         // Reverse direction
-        analogWrite(motorPin1, 0);
-        analogWrite(motorPin2, -smoothedMotorSpeed);
+        ledcWrite(MOTOR_FORWARD_PIN, 0);
+        ledcWrite(MOTOR_REVERSE_PIN, -smoothedMotorSpeed);
     } else {
         // Stop motor
-        analogWrite(motorPin1, 0);
-        analogWrite(motorPin2, 0);
+        ledcWrite(MOTOR_FORWARD_PIN, 0);
+        ledcWrite(MOTOR_REVERSE_PIN, 0);
     }
 }
 
@@ -248,13 +251,10 @@ esp_err_t init_wifi() {
 
 // Servo setup
 esp_err_t init_servo() {
-  // servo.attach(SERVO_PIN);   // Attach servo
-  // servo.write(90);           // Set servo to mid-position
-    
   // Initialize the servo
   dummyServo1.attach(dummyPin1);
   dummyServo2.attach(dummyPin2);
-  steeringServo.attach(servoPin);  // Attach servo to pin
+  steeringServo.attach(SERVO_PIN);  // Attach servo to pin
 
   return ESP_OK;
 };
@@ -263,10 +263,8 @@ esp_err_t init_servo() {
 esp_err_t init_motor() {
   // Initialize motor pins
   // ledcAttachChannel(uint8_t pin, uint32_t freq, uint8_t resolution, int8_t channel);
-  ledcAttachChannel(motorPin1, 2000, 8, 3);
-  ledcAttachChannel(motorPin2, 2000, 8, 4);
-  pinMode(motorPin1, OUTPUT);
-  pinMode(motorPin2, OUTPUT);
+  ledcAttachChannel(MOTOR_FORWARD_PIN, MOTOR_PWM_FREQUENCY, MOTOR_PWM_RESOLUTION, MOTOR_FORWARD_CHANNEL);
+  ledcAttachChannel(MOTOR_REVERSE_PIN, MOTOR_PWM_FREQUENCY, MOTOR_PWM_RESOLUTION, MOTOR_REVERSE_CHANNEL);
   controlMotor(0); // Start motor at 0 speed
 
   return ESP_OK;
