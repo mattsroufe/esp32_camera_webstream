@@ -1,4 +1,5 @@
 #include "secrets.h"
+#include <Arduino.h>
 #include "esp_camera.h"
 #include <WiFi.h>
 #include <ArduinoWebsockets.h>
@@ -9,6 +10,7 @@
 #include "soc/rtc_cntl_reg.h" //disable brownout problems
 #include "driver/gpio.h"
 #include <ESP32Servo.h>  // ESP32Servo library for servo control
+#include <SD.h>  // Include the SD library
 
 // configuration for AI Thinker Camera board
 #define PWDN_GPIO_NUM     32
@@ -43,10 +45,11 @@ uint8_t * _jpg_buf = NULL;
 uint8_t state = 0;
 // Servo servo; // Servo object for controlling the servo
 // Motor and Servo setup
-const int motorPin1 = 12;  // Motor control pin 1
-const int motorPin2 = 13;  // Motor control pin 2
+const int dummyPin1 = 12;  // Motor control pin 1
+const int dummyPin2 = 13;  // Motor control pin 2
 const int servoPin = 14;   // Servo control pin
-
+const int motorPin1 = 12;
+const int motorPin2 = 13;
 
 // Define dead zone threshold (adjust as needed)
 const int MOTOR_DEAD_ZONE = 10;  // Threshold for motor to ignore small values
@@ -74,7 +77,33 @@ using namespace websockets;
 WebsocketsClient client;
 
 // Create an instance of the ESP32Servo class
-Servo myServo;
+Servo dummyServo1;
+Servo dummyServo2;
+Servo steeringServo;
+
+QueueHandle_t controlQueue = xQueueCreate(1, sizeof(int)); // Single-item queue to hold control commands
+
+// Example Producer Task
+void ProducerTask(void *pvParamenters) {
+  int data = 0;
+  for (;;) {
+    data++;
+    xQueueOverwrite(controlQueue, &data); // Always keep the latest data
+    vTaskDelay(pdMS_TO_TICKS(100));
+  }
+}
+
+void ServoTask(void *pvParameters) {
+  int position;
+  for (;;) {
+    if (xQueuePeek(controlQueue, &position, portMAX_DELAY)) {
+      // printf("Latest position: %d\n", position);
+      controlServo(position);
+      delay(15);
+    }
+    vTaskDelay(pdMS_TO_TICKS(1));
+  }
+}
 
 void controlMotor(int throttle) {
     // Apply dead zone to the throttle value
@@ -123,7 +152,7 @@ void controlServo(int servoPos) {
     Serial.println(smoothedServoPos);
 
     // Write the smoothed position to the servo
-    myServo.write(constrain(smoothedServoPos, 0 + LEFT_STEERING_OFFSET, 180 - RIGHT_STEERING_OFFSET));  // Constrain within car's steering range
+    steeringServo.write(constrain(smoothedServoPos, 0 + LEFT_STEERING_OFFSET, 180 - RIGHT_STEERING_OFFSET));  // Constrain within car's steering range
 }
 
 void onMessageCallback(WebsocketsMessage message) {
@@ -149,6 +178,7 @@ void onMessageCallback(WebsocketsMessage message) {
       int angle = commands_str.substring(colonIndex + 1).toInt();
       controlMotor(throttle);
       controlServo(angle);
+      // xQueueOverwrite(controlQueue, &angle);
   }
 }
 
@@ -220,17 +250,24 @@ esp_err_t init_wifi() {
 esp_err_t init_servo() {
   // servo.attach(SERVO_PIN);   // Attach servo
   // servo.write(90);           // Set servo to mid-position
+  // pinMode(12, INPUT); // needs to be input to avoid pwm issues with esp_camera
+  // pinMode(13, INPUT); // needs to be input to avoid pwm issues with esp_camera
 
     
   // Initialize the servo
-  myServo.attach(servoPin);  // Attach servo to pin
-  controlServo(90);
+  dummyServo1.attach(dummyPin1);
+  dummyServo2.attach(dummyPin2);
+  steeringServo.attach(servoPin);  // Attach servo to pin
+
   return ESP_OK;
 };
 
 // Motor setup
 esp_err_t init_motor() {
-    // Initialize motor pins
+  // Initialize motor pins
+  // ledcAttachChannel(uint8_t pin, uint32_t freq, uint8_t resolution, int8_t channel);
+  ledcAttachChannel(motorPin1, 2000, 8, 3);
+  ledcAttachChannel(motorPin2, 2000, 8, 4);
   pinMode(motorPin1, OUTPUT);
   pinMode(motorPin2, OUTPUT);
   controlMotor(0); // Start motor at 0 speed
@@ -244,6 +281,12 @@ void setup() {
   Serial.begin(115200);
   Serial.setDebugOutput(true);
 
+  // Now, disable the SD card to free up pins
+  SD.end();
+  Serial.println("SD Card disabled. Pins freed!");
+
+  // xTaskCreate(ServoTask, "Servo", 1000, NULL, 1, NULL);
+
   init_camera();
   init_wifi();
   init_servo();
@@ -256,7 +299,7 @@ void loop() {
     if (!fb) {
       Serial.println("img capture failed");
       esp_camera_fb_return(fb);
-      ESP.restart();
+      // ESP.restart();
     }
     client.sendBinary((const char*) fb->buf, fb->len);
     // Serial.println("image sent");
