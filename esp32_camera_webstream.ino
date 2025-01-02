@@ -250,9 +250,6 @@ esp_err_t init_wifi() {
 esp_err_t init_servo() {
   // servo.attach(SERVO_PIN);   // Attach servo
   // servo.write(90);           // Set servo to mid-position
-  // pinMode(12, INPUT); // needs to be input to avoid pwm issues with esp_camera
-  // pinMode(13, INPUT); // needs to be input to avoid pwm issues with esp_camera
-
     
   // Initialize the servo
   dummyServo1.attach(dummyPin1);
